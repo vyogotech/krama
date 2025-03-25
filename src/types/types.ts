@@ -1,0 +1,23 @@
+export const TASK_TYPES = [
+    'Planning',
+    'Site Preparation',
+    'Excavation',
+    'Foundation Work',
+    'Structural Framing',
+    'Concrete Work',
+    'Masonry Work',
+    'Roofing',
+    'Electrical Installation',
+    'Plumbing',
+    'HVAC Installation',
+    'Drywall & Insulation',
+    'Flooring',
+    'Painting & Finishing',
+    'Landscaping',
+    'Safety Inspections',
+    'Material Procurement',
+    'Quality Control',
+    'Project Management',
+    'Site Cleanup',
+    'Client Handover'
+];
