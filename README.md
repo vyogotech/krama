@@ -4,6 +4,7 @@ Krama is a project planning tool inspired by robicch/jQueryGantt aiming to provi
 
 The work Krama (क्रम) is a sanskrit word for system planning/task sequencing.
 
+![Krama](krama.jpg)
 ## Features
 
 - **Task Management**: Add, edit, delete, indent, and unindent tasks.
