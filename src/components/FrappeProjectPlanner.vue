@@ -146,7 +146,8 @@ const columns = computed(() => {
       }
     }
   },
-];
+  ];
+}); // Correctly closing the computed property here
 
 const columnToTaskMapping = {
   'Task Name': 'name',
