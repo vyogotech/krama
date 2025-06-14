@@ -1,6 +1,6 @@
 // src/stores/taskStore.ts
 import { defineStore } from 'pinia';
-import { format } from 'date-fns';
+import { format, parseISO, addDays } from 'date-fns';
 import type { Task } from '../types';
 
 export const useTaskStore = defineStore('tasks', {
@@ -353,61 +353,230 @@ export const useTaskStore = defineStore('tasks', {
       task[colIndex] = value;
     },
     
-    updateTaskValue(rowindex: number, field: keyof Task, value: any) {
+    updateTaskValue(rowindex: number, field: keyof Task, value: any): boolean {
       const task = this.tasks[rowindex];
-      if (!task) return;
+      if (!task) return false;
+
+      let successfullyUpdated = true; // Assume success initially
+
       switch (field) {
         case 'name':
         case 'taskType':
         case 'assignee':
           task[field] = value;
           break;
-        case 'duration':
-          if (value < 0) return;
-          task.duration = value;
+        case 'duration': {
+          const newDuration = parseInt(value);
+          if (isNaN(newDuration) || newDuration < 0) {
+            successfullyUpdated = false; // Invalid input
+            break;
+          }
+
+          const oldEndDate = task.endDate;
+          task.duration = newDuration;
+
           if (task.startDate) {
-            const start_date = new Date(task.startDate);
-            if (!isNaN(start_date.getTime())) {
-              const end_date = new Date(start_date);
-              end_date.setDate(start_date.getDate() + parseInt(value));
-              task.endDate = end_date.toISOString().split('T')[0];
+            const startDateObj = parseISO(task.startDate);
+            if (!isNaN(startDateObj.getTime())) {
+              const newEndDateObj = addDays(startDateObj, task.duration);
+              task.endDate = format(newEndDateObj, 'yyyy-MM-dd');
             }
           }
+
+          if (task.endDate !== oldEndDate) {
+            this._updateDependentTasks(task.id, task.endDate);
+          }
           break;
+        }
           
-        case 'startDate':
-          task.startDate = value;
-          if (task.endDate) {
-            const start_date = new Date(value);
-            const end_date = new Date(task.endDate);
-            if (!isNaN(start_date.getTime()) && !isNaN(end_date.getTime())) {
-              const diffTime = end_date.getTime() - start_date.getTime();
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-              task.duration = diffDays;
-            }
+        case 'startDate': {
+          const newStartDateStr = value; // value is already 'yyyy-MM-dd' string
+          const oldEndDate = task.endDate;
+
+          const newStartDateObj = parseISO(newStartDateStr);
+          if (isNaN(newStartDateObj.getTime())) {
+            successfullyUpdated = false; // Invalid date string
+            break;
+          }
+
+          task.startDate = newStartDateStr;
+
+          let currentDuration = typeof task.duration === 'number' && !isNaN(task.duration) ? task.duration : 0;
+          // If duration was 0/undefined, and we have an old end date, try to preserve it by calculating new duration
+          if (currentDuration === 0 && oldEndDate && oldEndDate >= task.startDate) {
+                const oldEndDateObj = parseISO(oldEndDate);
+                if(!isNaN(oldEndDateObj.getTime())) {
+                    let tempDuration = 0;
+                    let tempDate = newStartDateObj;
+                    while(format(tempDate, 'yyyy-MM-dd') < oldEndDate) {
+                        tempDate = addDays(tempDate, 1);
+                        tempDuration++;
+                    }
+                    currentDuration = tempDuration;
+                    task.duration = currentDuration;
+                }
+          }
+
+          const newEndDateObjBasedOnDuration = addDays(newStartDateObj, currentDuration);
+          task.endDate = format(newEndDateObjBasedOnDuration, 'yyyy-MM-dd');
+
+          if (task.endDate !== oldEndDate) {
+            this._updateDependentTasks(task.id, task.endDate);
           }
           break;
+        }
             
-        case 'endDate':
-          task.endDate = value;
+        case 'endDate': {
+          const newEndDateStr = value; // value is 'yyyy-MM-dd'
+          const oldEndDate = task.endDate;
+
+          const newEndDateObj = parseISO(newEndDateStr);
+          if (isNaN(newEndDateObj.getTime())) {
+             successfullyUpdated = false;
+             break;
+          }
+
+          task.endDate = newEndDateStr;
+
           if (task.startDate) {
-            const start_date = new Date(task.startDate);
-            const end_date = new Date(value);
-            if (!isNaN(start_date.getTime()) && !isNaN(end_date.getTime())) {
-              const diffTime = end_date.getTime() - start_date.getTime();
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-              task.duration = diffDays;
+            const currentStartDateObj = parseISO(task.startDate);
+            if (!isNaN(currentStartDateObj.getTime()) && newEndDateObj >= currentStartDateObj) {
+              let tempDuration = 0;
+              let tempDate = currentStartDateObj;
+              // Calculate duration by counting days
+              while(format(tempDate, 'yyyy-MM-dd') < task.endDate) {
+                  tempDate = addDays(tempDate, 1);
+                  tempDuration++;
+              }
+              task.duration = tempDuration;
+            } else if (!isNaN(currentStartDateObj.getTime()) && newEndDateObj < currentStartDateObj) {
+              task.duration = 0;
             }
           }
+
+          if (task.endDate !== oldEndDate) {
+            this._updateDependentTasks(task.id, task.endDate);
+          }
           break;
+        }
 
         case 'progress':
-          task.progress = parseFloat(value);
+          const newProgress = parseFloat(value);
+          if (isNaN(newProgress) || newProgress < 0 || newProgress > 100) {
+            successfullyUpdated = false;
+            break;
+          }
+          task.progress = newProgress;
           break;
         case 'dependencies':
-          task.dependencies = value.split(',').map((d: string) => d.trim()).filter((d: string) => d);
+          const newPotentialDependencies = value.split(',').map((d: string) => d.trim()).filter((d: string) => d);
+          if (this._hasCircularDependency(task.id, newPotentialDependencies, this.tasks)) {
+            console.warn(`Circular dependency detected for task ${task.id}. Update rejected.`);
+            successfullyUpdated = false; // Indicate failure
+          } else {
+            task.dependencies = newPotentialDependencies;
+          }
+          break;
+        default:
+          // Potentially handle unknown field if necessary, or just let it be a successful no-op
           break;
       }
+      return successfullyUpdated;
+    },
+
+    _hasCircularDependency(taskId: string, newDependencies: string[], allTasks: Task[]): boolean {
+      const tasksMap = new Map(allTasks.map(t => [t.id, t]));
+
+      for (const depId of newDependencies) {
+        // For each new dependency, perform a DFS to see if it can reach back to taskId
+        const stack: Array<{ id: string, path: Set<string> }> = [{ id: depId, path: new Set() }];
+
+        while (stack.length > 0) {
+          const { id: currentId, path: currentPath } = stack.pop()!;
+
+          if (currentId === taskId) {
+            return true; // Cycle detected: a dependency path leads back to the original task
+          }
+
+          // If already visited in the current specific path, skip (this forms the cycle).
+          // Note: This check is slightly different from a global visited set.
+          // A task can be part of multiple non-cyclic paths.
+          if (currentPath.has(currentId)) {
+            // This condition implies that `currentId` is being revisited within the same traversal path from `depId`.
+            // If `currentId` also happens to be `taskId`, the check `currentId === taskId` above would have caught it.
+            // If it's another node being revisited in the same path, it's a cycle not necessarily involving `taskId` directly
+            // but means this path is cyclic. The primary goal is to see if `taskId` is reachable.
+            continue;
+          }
+
+          // Add current node to the path for this traversal
+          const newPath = new Set(currentPath);
+          newPath.add(currentId);
+
+          const currentTask = tasksMap.get(currentId);
+          if (currentTask && currentTask.dependencies) {
+            for (const nextDepId of currentTask.dependencies) {
+              // We only push to the stack if `nextDepId` is not already in `newPath`.
+              // If `nextDepId` *is* in `newPath`, that means adding `nextDepId` would form a cycle.
+              // If that `nextDepId` which forms a cycle is `taskId`, then we have our circular dependency.
+              if (nextDepId === taskId) { // Check before pushing if the next step completes the cycle to taskId
+                return true;
+              }
+              if (!newPath.has(nextDepId)) { // Push to stack only if not visited in current path
+                stack.push({ id: nextDepId, path: newPath });
+              }
+            }
+          }
+        }
+      }
+      return false; // No circular dependencies found
+    },
+
+    _recalculateTaskDates(taskId: string, newStartDate: Date): boolean {
+      const task = this.tasks.find(t => t.id === taskId);
+      if (!task) return false;
+
+      const formattedNewStartDate = format(newStartDate, 'yyyy-MM-dd');
+
+      // Check if the start date is actually changing
+      if (task.startDate === formattedNewStartDate) {
+        return false;
+      }
+
+      task.startDate = formattedNewStartDate;
+      // Ensure duration is a valid number before using it
+      const duration = typeof task.duration === 'number' && !isNaN(task.duration) ? task.duration : 0;
+
+      const newEndDate = addDays(newStartDate, duration);
+      task.endDate = format(newEndDate, 'yyyy-MM-dd');
+
+      // If duration was invalid and reset, ensure it's reflected
+      if (duration === 0 && task.duration !== 0) {
+          task.duration = 0;
+      }
+
+      return true;
+    },
+
+    _updateDependentTasks(updatedTaskId: string, updatedTaskEndDateStr: string) {
+      if (!updatedTaskEndDateStr) return; // Should not happen if called correctly
+      const updatedTaskEndDate = parseISO(updatedTaskEndDateStr);
+
+      this.tasks.forEach(dependentTask => {
+        if (dependentTask.dependencies && dependentTask.dependencies.includes(updatedTaskId)) {
+          const newDependentStartDate = addDays(updatedTaskEndDate, 1);
+          const oldDependentEndDate = dependentTask.endDate;
+
+          if (this._recalculateTaskDates(dependentTask.id, newDependentStartDate)) {
+            // If _recalculateTaskDates changed the dependent task's dates,
+            // (which means its endDate might have changed),
+            // then recursively call _updateDependentTasks for this dependent task.
+             if (dependentTask.endDate !== oldDependentEndDate) { // Recurse only if end date changed
+                this._updateDependentTasks(dependentTask.id, dependentTask.endDate);
+             }
+          }
+        }
+      });
     }
   }
 });

@@ -13,15 +13,66 @@ import { eventBus } from '../event-bus/eventBus';
 const taskStore = useTaskStore();
 const tableEl = ref<HTMLElement | null>(null);
 let datatable: any = null;
-let lastEditedValue = null; 
+let lastEditedValue = null;
 
-const columns = [
-  { name: 'Task Name', width: 200, sortable: false, editable: true, format: (value: string) => value.bold() },
-  { name: 'Task Type', width: 50, editable: true, dropdown: true, options: TASK_TYPES },
-  { name: 'Dependencies', width: 25, editable: true },
-  { 
-    name: 'Start Date', 
-    width: 40, 
+// Define columns as a computed property to access taskStore and current task context
+const columns = computed(() => {
+  // Access the raw tasks array from the store for creating dropdown options
+  const allTasks = taskStore.tasks;
+  // Get the ID of the current task being edited. This needs to be determined within getEditor.
+  // For now, this is a placeholder for the logic that will pass the current task's ID.
+
+  return [
+    { name: 'Task Name', width: 200, sortable: false, editable: true, format: (value: string) => value.bold() },
+    { name: 'Task Type', width: 50, editable: true, dropdown: true, options: TASK_TYPES },
+    {
+      name: 'Dependencies',
+      width: 150, // Increased width to better accommodate the multi-select
+      getEditor: (colIndex: number, rowIndex: number, value: string, parent: HTMLElement, column: any, row: any, data: any[]) => {
+        const currentTaskInProgress = taskStore.tasks[rowIndex]; // Get current task by rowIndex
+        const currentTaskId = currentTaskInProgress ? currentTaskInProgress.id : null;
+
+        const selectEl = document.createElement('select');
+        selectEl.multiple = true;
+        selectEl.style.width = '100%';
+        selectEl.style.height = '80px'; // Provide some height for multiple options
+
+        allTasks.forEach(task => {
+          if (task.id !== currentTaskId) { // Exclude current task from its own dependencies list
+            const option = document.createElement('option');
+            option.value = task.id;
+            option.textContent = `${task.name} (ID: ${task.id})`;
+            selectEl.appendChild(option);
+          }
+        });
+        parent.appendChild(selectEl);
+
+        return {
+          initValue(currentValue: string) {
+            selectEl.focus();
+            const selectedIds = currentValue ? currentValue.split(',').map(id => id.trim()) : [];
+            Array.from(selectEl.options).forEach(option => {
+              if (selectedIds.includes(option.value)) {
+                option.selected = true;
+              }
+            });
+          },
+          setValue(newValue: string) { // Called when programmatic changes happen, e.g. paste
+            const selectedIds = newValue ? newValue.split(',').map(id => id.trim()) : [];
+            Array.from(selectEl.options).forEach(option => {
+              option.selected = selectedIds.includes(option.value);
+            });
+          },
+          getValue() {
+            const selectedOptions = Array.from(selectEl.selectedOptions);
+            return selectedOptions.map(option => option.value).join(',');
+          }
+        };
+      }
+    },
+    {
+      name: 'Start Date',
+      width: 40,
     editable: true, 
     format: (value: string) => formatDate(value),
     onCellChange: (cell, row, data, dataTable) => {
@@ -163,7 +214,7 @@ function initDataTable() {
   if (!tableEl.value) return;
   
   datatable = new DataTable(tableEl.value, {
-    columns: columns,
+    columns: columns.value, // Use .value for computed property
     data: tableData.value,
     checkboxColumn: true,
     serialNoColumn: true,
@@ -232,11 +283,37 @@ datatable.wrapper.addEventListener('focusout', function(e) {
         //how to we map this to Task type?
         colname = columnToTaskMapping[colname];
         console.log(`Mapped Column Name: ${colname}`);
-        //updateTableState(rowIndex, colname, newValue);
-        taskStore.updateTaskValue(rowIndex, colname, newValue);
-        // Highlight the edited cell (optional)
-        editCell.style.backgroundColor = "#fffa90"; // Light yellow highlight
-        setTimeout(() => editCell.style.backgroundColor = "", 1000); // Remove after 1 sec
+
+        const success = taskStore.updateTaskValue(parseInt(rowIndex), colname, newValue);
+
+        if (success) {
+          // Highlight the edited cell (optional) on success
+          editCell.style.backgroundColor = "#e6ffed"; // Light green highlight for success
+          setTimeout(() => editCell.style.backgroundColor = "", 1500);
+        } else {
+          // Visual feedback for error
+          editCell.style.backgroundColor = "#ffebee"; // Light red highlight for error
+          setTimeout(() => editCell.style.backgroundColor = "", 2500); // Keep error highlight longer
+
+          if (colname === 'dependencies') {
+            alert('Error: Could not update dependencies. This might be due to a circular dependency or invalid input. Please check and try again.');
+          } else if (colname === 'startDate' || colname === 'endDate' || colname === 'duration') {
+            alert('Error: Invalid date or duration. Please ensure dates are valid and the end date is not before the start date.');
+          } else if (colname === 'progress') {
+            alert('Error: Invalid progress value. Please enter a number between 0 and 100.');
+          } else {
+            alert('Error: The value entered is invalid or could not be saved. Please check and try again.');
+          }
+
+          // Refresh the specific cell or row from store data to revert optimistic UI update by datatable
+          // DataTable might optimistically show the new value even if store rejected it.
+          // We need to tell datatable to re-render that cell/row with data from tableData (which reflects the store).
+          // Frappe DataTable's API for refreshing a single cell is not direct.
+          // Refreshing the whole table is safer to ensure UI is in sync with the store.
+          if (datatable) {
+            datatable.refresh(tableData.value);
+          }
+        }
    }
 });
 
