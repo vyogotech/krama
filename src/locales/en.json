@@ -1,0 +1,42 @@
+{
+  "krama": {
+    "toolbar": {
+      "project": "Project",
+      "statusLabel": "Project Status:",
+      "saveChanges": "Save Changes",
+      "noChanges": "(No changes)",
+      "zoomIn": "Zoom In",
+      "zoomOut": "Zoom Out",
+      "zoomView": "View:",
+      "expandAll": "Expand All",
+      "collapseAll": "Collapse All",
+      "undo": "Undo",
+      "redo": "Redo"
+    },
+    "projectStatus": {
+      "Draft": "Draft",
+      "InProgress": "In Progress",
+      "Completed": "Completed",
+      "OnHold": "On Hold",
+      "Cancelled": "Cancelled"
+    },
+    "grid": {
+      "tasksTitle": "Tasks",
+      "noTasksLoaded": "No tasks loaded.",
+      "headers": {
+        "id": "ID",
+        "title": "Title (Name)",
+        "typeArea": "Type (Area)",
+        "startDate": "Start Date",
+        "endDate": "End Date",
+        "duration": "Duration",
+        "progress": "Progress (%)",
+        "dependencies": "Dependencies",
+        "none": "None"
+      }
+    },
+    "gantt": {
+      "placeholder": "Krama Gantt Chart Placeholder"
+    }
+  }
+}

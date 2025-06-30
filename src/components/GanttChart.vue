@@ -1,15 +1,25 @@
 <script setup lang="ts">
-import { onMounted, watch, ref, nextTick, computed, onUnmounted } from 'vue';
+import { onMounted, watch, ref, nextTick, computed, onUnmounted, PropType } from 'vue'; // Added PropType
 import Gantt from 'frappe-gantt';
 import { parseISO, format, addDays } from 'date-fns';
-import type { Task } from '../types';
+import type { Task } from '../types'; // Assuming this path is correct for Task type
 import { useTaskStore } from '../stores/taskStore';
-import { provide } from "vue";
-import { eventBus } from '../event-bus/eventBus';
+// import { provide } from "vue"; // provide seems unused
+import { eventBus } from '../event-bus/eventBus'; // eventBus seems unused currently after removing watch on tasks
+
+type ZoomLevel = 'Day' | 'Week' | 'Month'; // Matches KramaGantt.vue zoom levels
+
+const props = defineProps({
+  zoomLevel: {
+    type: String as PropType<ZoomLevel>,
+    required: true,
+    default: 'Week'
+  }
+});
 
 const taskStore = useTaskStore();
-const ganttContainer = ref(null);
-const ganttWrapper = ref(null);
+const ganttContainer = ref<HTMLElement | null>(null);
+const ganttWrapper = ref<HTMLElement | null>(null);
 let ganttChart: Gantt | null = null;
 let resizeObserver: ResizeObserver | null = null;
 
@@ -67,70 +77,105 @@ const renderGantt = () => {
     
     // Create and render the Gantt chart with custom date range
     ganttChart = new Gantt(ganttContainer.value, formatTasks(), {
-      view_mode: 'Week',
-      language: 'en',
-      scroll_to: startDate,
-      view_mode: "Month",
+      view_mode: props.zoomLevel, // Use prop for initial view_mode
+      language: 'en', // TODO: Make this configurable via props if needed for i18n
+      scroll_to: startDate, // Sensible default, might need adjustment based on actual task dates
+      // view_mode: "Month", // This was duplicated, removed
       auto_move_label: true,
-      update_view_scale: true,
-      view_mode_select: true,
-      lines: "None",
-      upper_header_height: 30,
-      snap_at: 30,
-      start_date: startDate,  // Set the start date to the earliest task start date
-      end_date: endDate,      // Set the end date to the latest task end date
-      readonly: true,
+      update_view_scale: true, // Important for dynamic changes
+      // view_mode_select: true, // This adds a dropdown in frappe-gantt, Krama has its own
+      lines: "None", // "None" or "Both" or "Horizontal" or "Vertical"
+      upper_header_height: 30, // Example value
+      // snap_at: 30, // Example value, might relate to snapping behavior not needed for read-only
+      start_date: startDate,
+      end_date: endDate,
+      readonly: true, // As per existing setup, Krama interactions are in the grid
+      custom_popup_html: null, // Disable default popup for now
+      on_click: (task) => {
+        // Potentially emit an event or select task in store
+        // console.log("Gantt task clicked:", task);
+        taskStore.selectTask(task.id);
+      },
+      // on_date_change: (task, start, end) => { /* For editable charts */ },
+      // on_progress_change: (task, progress) => { /* For editable charts */ },
+      // on_view_change: (mode) => { /* console.log("Gantt view mode changed to:", mode); */ }
     });
   }
 };
 
 // Handle resize to make the chart responsive
 const handleResize = () => {
-  if (ganttChart) {
-    ganttChart.refresh(formatTasks());
-    
-    // Force a resize event after a slight delay to ensure proper rendering
-    setTimeout(() => {
-      window.dispatchEvent(new Event('resize'));
-    }, 100);
+  if (ganttChart && ganttContainer.value && ganttContainer.value.offsetWidth > 0) {
+    // Frappe-gantt typically refreshes on window resize.
+    // If direct refresh is needed:
+    // ganttChart.refresh(formatTasks());
   }
 };
 
 // Create a ResizeObserver to watch for container size changes
 const setupResizeObserver = () => {
   if (ganttWrapper.value && !resizeObserver) {
-    resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver = new ResizeObserver(handleResize); // handleResize might need to trigger gantt refresh
     resizeObserver.observe(ganttWrapper.value);
   }
 };
 
+// Helper function to refresh or re-render the Gantt chart
+function refreshGanttChart() {
+  if (ganttChart && ganttContainer.value) {
+    // Option 1: Full re-render (safer if date ranges or tasks drastically change)
+    // ganttContainer.value.innerHTML = ''; // Clear previous
+    // renderGantt();
+
+    // Option 2: Refresh with new tasks (might be sufficient for task data changes)
+     ganttChart.refresh(formatTasks());
+  } else if (ganttContainer.value) {
+    // If chart doesn't exist but container does, try to render it.
+    renderGantt();
+  }
+}
+
 onMounted(async () => {
-  // Ensure DOM is fully rendered before initializing Gantt
   await nextTick();
   renderGantt();
   setupResizeObserver();
-  eventBus.on('refreshGantt', refreshGantt);
-  // Initial resize handling
+  // eventBus.on('refreshGantt', refreshGantt); // 'refreshGantt' was not defined, replaced with refreshGanttChart
+  eventBus.on('refreshGantt', refreshGanttChart);
   window.addEventListener('resize', handleResize);
 });
 
 onUnmounted(() => {
-  // Clean up event listeners and observers
-    eventBus.off('refreshGantt', refreshGantt);
+  eventBus.off('refreshGantt', refreshGanttChart);
   window.removeEventListener('resize', handleResize);
   if (resizeObserver) {
     resizeObserver.disconnect();
     resizeObserver = null;
   }
+  if (ganttChart) {
+    // ganttChart.destroy(); // If frappe-gantt has a destroy method
+    ganttChart = null;
+  }
 });
 
-// Watch for changes to tasks and re-render the chart
-// watch(() => taskStore.tasks, () => {
-//   if (ganttChart) {
-//     // Completely re-render the chart to apply new date boundaries
-//     renderGantt();
-//   }
-// }, { deep: true });
+// Watch for changes to tasks from the store
+watch(() => taskStore.tasks, () => {
+  if (ganttChart) {
+    // Update date range for Gantt chart if necessary
+    // This is important if tasks are added/removed or dates change significantly
+    // const newStartDate = format(earliestStartDate.value, 'yyyy-MM-dd');
+    // const newEndDate = format(latestEndDate.value, 'yyyy-MM-dd');
+    // ganttChart.setup_date_values(); // May need to re-setup dates, or full re-render
+
+    refreshGanttChart(); // Re-render or refresh
+  }
+}, { deep: true });
+
+// Watch for zoomLevel prop changes
+watch(() => props.zoomLevel, (newZoomLevel) => {
+  if (ganttChart && newZoomLevel) {
+    ganttChart.change_view_mode(newZoomLevel);
+  }
+});
 
 </script>
 

@@ -1,24 +1,28 @@
-// src/types/Task.js
+// src/types/Task.ts
 
-/**
- * @typedef {Object} Task
- * @property {string} id - The unique identifier for the task.
- * @property {string} name - The name of the task.
- * @property {string} startDate - The start date of the task in YYYY-MM-DD format.
- * @property {string} endDate - The end date of the task in YYYY-MM-DD format.
- * @property {number} progress - The progress of the task as a percentage.
- * @property {string} assignee - The name of the person assigned to the task.
- * @property {number} duration - Task duration in days.
- * @property {string[]} dependencies - An array of task IDs that this task depends on.
- * @property {number} indent - The indentation level of the task.
- * @property {string|null} parentId - The ID of the parent task, or null if there is no parent.
- * @property {string} taskType - The type of the task.
- */
+export interface Task {
+  id: string;
+  name: string;
+  startDate: string; // YYYY-MM-DD format
+  endDate: string;   // YYYY-MM-DD format
+  progress: number;  // Percentage
+  assignee?: string; // Optional: As per taskStore initial data, some might not have it
+  duration?: number; // Task duration in days - Can be calculated or explicit
+  dependencies?: string[]; // Array of task IDs
+  indent: number;
+  parentId?: string | null;
+  taskType: string;
+  isCollapsed?: boolean; // For CT-05 Expand/Collapse
+  // Optional: Fields from taskStore's sample data not in original JSDoc
+  // but good to have consistency.
+  // If 'duration' is always calculated, it can be removed from explicit definition
+  // but store actions suggest it can be set.
+}
 
 /**
  * Example task object:
- * 
- * const exampleTask = {
+ *
+ * const exampleTask: Task = {
  *   id: '1',
  *   name: 'Project Planning',
  *   startDate: '2024-03-01',
@@ -29,5 +33,6 @@
  *   indent: 0,
  *   parentId: null,
  *   taskType: 'Planning',
+ *   duration: 15 // Example: if duration is explicit
  * };
  */
