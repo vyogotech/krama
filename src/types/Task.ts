@@ -13,6 +13,7 @@ export interface Task {
   parentId?: string | null;
   taskType: string;
   isCollapsed?: boolean; // For CT-05 Expand/Collapse
+  sequence?: number; // From src/types.ts Task definition
   // Optional: Fields from taskStore's sample data not in original JSDoc
   // but good to have consistency.
   // If 'duration' is always calculated, it can be removed from explicit definition

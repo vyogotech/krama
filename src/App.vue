@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import ProjectPlanner from './components/FrappeProjectPlanner.vue'
 import GanttChart from './components/GanttChart.vue';
-import { useTaskStore } from './stores/taskStore';
-const taskStore = useTaskStore();
+// import { useTaskStore } from './stores/taskStore'; // Removed as taskStore instance was unused here
+// const taskStore = useTaskStore(); // Removed
 
 </script>
 

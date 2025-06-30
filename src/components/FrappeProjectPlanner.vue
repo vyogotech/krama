@@ -2,266 +2,277 @@
 import 'frappe-datatable/dist/frappe-datatable.css'
 
 import { ref, computed, onMounted, watch } from 'vue';
-import { format } from 'date-fns';
-import type { Task, Column } from '../types';
-import { TASK_TYPES } from '../types';
+import { format, differenceInCalendarDays, addDays } from 'date-fns'; // Added differenceInCalendarDays, addDays
+import type { Task } from '../types'; // Task is now the consolidated one, removed unused Column
+import { TASK_TYPES } from '../types'; // This is actually from src/types/types.ts, consider path
 import DataTable from 'frappe-datatable';
 import { useTaskStore } from '../stores/taskStore';
-import { inject } from "vue";
-import { eventBus } from '../event-bus/eventBus';
+// import { inject } from "vue"; // Unused
+import { eventBus } from '../event-bus/eventBus'; // Used for refreshGantt
+
+// Define a more specific type for Frappe DataTable columns if possible, or use 'any' for now.
+// This is a simplified version of what FrappeDataTable might expect.
+interface FrappeColumn {
+  name: string;
+  id?: string;
+  width: number;
+  sortable?: boolean;
+  editable?: boolean;
+  format?: (value: any, cell?: any, row?: any, data?: any) => string | HTMLElement; // Adjusted format
+  dropdown?: boolean;
+  options?: string[];
+  align?: 'left' | 'right' | 'center';
+  onCellChange?: (cell: any, row: any, data: any, dataTable: any) => void; // Added types
+}
+
 
 const taskStore = useTaskStore();
 const tableEl = ref<HTMLElement | null>(null);
-let datatable: any = null;
-let lastEditedValue = null; 
+let datatable: any = null; // Keep as any for now due to lack of official types for instance
+// let lastEditedValue = null; // Unused
 
-const columns = [
-  { name: 'Task Name', width: 200, sortable: false, editable: true, format: (value: string) => value.bold() },
-  { name: 'Task Type', width: 50, editable: true, dropdown: true, options: TASK_TYPES },
-  { name: 'Dependencies', width: 25, editable: true },
+const columns: FrappeColumn[] = [ // Explicitly typed
+  { name: 'Task Name', width: 200, sortable: false, editable: true, format: (value: string) => value ? value.bold() : '' },
+  { name: 'Task Type', id: 'taskType', width: 120, editable: true, dropdown: true, options: TASK_TYPES }, // Adjusted width
+  { name: 'Dependencies', id: 'dependencies', width: 100, editable: true }, // Adjusted width
   { 
     name: 'Start Date', 
-    width: 40, 
+    id: 'startDate',
+    width: 120, // Adjusted width
     editable: true, 
-    format: (value: string) => formatDate(value),
-    onCellChange: (cell, row, data, dataTable) => {
-      // Update duration when start date changes
+    format: (value: string) => value ? formatDate(value) : '',
+    onCellChange: (cell: any, row: any, _data: any, dataTable: any) => {
       const startDate = new Date(cell.content);
-      const endDateCell = row.find(c => c.column.name === 'End Date');
-      const endDate = endDateCell ? new Date(endDateCell.content) : null;
-      
-      // If we have a valid end date and it's before the new start date, update end date
-      if (endDate && !isNaN(endDate) && endDate < startDate) {
-        const newEndDate = new Date(startDate);
-        newEndDate.setDate(startDate.getDate() + 1); // Default to 1 day duration
-        endDateCell.content = newEndDate.toISOString().split('T')[0];
+      const endDateCell = row.find((c: any) => c.column.name === 'End Date');
+      if (endDateCell) {
+        const endDate = new Date(endDateCell.content);
+        if (endDate && !isNaN(endDate.getTime()) && endDate < startDate) {
+          const newEndDate = addDays(startDate, 1); // Default to 1 day duration
+          endDateCell.content = format(newEndDate, 'yyyy-MM-dd');
+        }
       }
-      
-      // Force refresh of the data to recalculate duration
       dataTable.refresh();
     }
   },
   { 
     name: 'End Date', 
-    width: 40, 
+    id: 'endDate',
+    width: 120, // Adjusted width
     editable: true, 
-    format: (value: string) => formatDate(value),
-    onCellChange: (cell, row, data, dataTable) => {
-      // Update duration when end date changes
+    format: (value: string) => value ? formatDate(value): '',
+    onCellChange: (cell: any, row: any, _data: any, dataTable: any) => {
       const endDate = new Date(cell.content);
-      const startDateCell = row.find(c => c.column.name === 'Start Date');
-      const startDate = startDateCell ? new Date(startDateCell.content) : null;
-      
-      // If we have a valid start date and it's after the new end date, update start date
-      if (startDate && !isNaN(startDate) && startDate > endDate) {
-        const newStartDate = new Date(endDate);
-        newStartDate.setDate(endDate.getDate() - 1); // Default to 1 day duration
-        startDateCell.content = newStartDate.toISOString().split('T')[0];
+      const startDateCell = row.find((c: any) => c.column.name === 'Start Date');
+      if (startDateCell) {
+        const startDate = new Date(startDateCell.content);
+        if (startDate && !isNaN(startDate.getTime()) && startDate > endDate) {
+          const newStartDate = addDays(endDate, -1); // Default to 1 day duration
+          startDateCell.content = format(newStartDate, 'yyyy-MM-dd');
+        }
       }
-      
-      // Force refresh of the data to recalculate duration
       dataTable.refresh();
     }
   },
-  { name: 'Progress', width: 10, editable: true, format: (value: number) => `${value}%` },
+  { name: 'Progress', id: 'progress', width: 80, editable: true, format: (value: number) => `${value || 0}%` }, // Adjusted width
   {
     name: 'Duration (Days)',
     id: 'duration',
-    width: 10,
+    width: 100, // Adjusted width
     align: 'right',
     editable: true,
-    format: (cell, row, data) => {
-                const start = new Date(row[5].content);
-                const end = new Date(row[6].content);
-                console.log(end-start)
-                return isNaN(start) || isNaN(end) ? 'N/A' : Math.round((end - start) / (1000 * 60 * 60 * 24));
+    format: (_cell: any, row: any, _data: any) => { // Parameters typed
+        // Assuming row data is an array where indices correspond to column order
+        // This is fragile; Frappe DataTable might provide data object directly in `row` or `data`
+        // For now, let's assume row[3] is StartDate, row[4] is EndDate based on current column order
+        const startDateString = row.find((c:any) => c.column.id === 'startDate')?.content;
+        const endDateString = row.find((c:any) => c.column.id === 'endDate')?.content;
+
+        if (startDateString && endDateString) {
+            const start = new Date(startDateString);
+            const end = new Date(endDateString);
+            if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end >= start) {
+                // console.log(`Duration calc: End ${end}, Start ${start}, Diff: ${differenceInCalendarDays(end, start) + 1}`);
+                return (differenceInCalendarDays(end, start) + 1).toString(); // +1 for inclusive days
+            }
+        }
+        return 'N/A';
     },
-    onCellChange: (cell, row, data, dataTable) => {
-      // Update end date when duration changes
-      const duration = parseInt(cell.content);
-      if (isNaN(duration)) return;
+    onCellChange: (cell: any, row: any, _data: any, dataTable: any) => {
+      const duration = parseInt(cell.content, 10);
+      if (isNaN(duration) || duration < 0) return;
       
-      const startDateCell = row.find(c => c.column.name === 'Start Date');
-      const startDate = startDateCell ? new Date(startDateCell.content) : null;
-      const endDateCell = row.find(c => c.column.name === 'End Date');
+      const startDateCell = row.find((c: any) => c.column.name === 'Start Date');
+      const endDateCell = row.find((c: any) => c.column.name === 'End Date');
       
-      if (startDate && !isNaN(startDate.getTime())) {
-        const newEndDate = new Date(startDate);
-        newEndDate.setDate(startDate.getDate() + duration);
-        endDateCell.content = newEndDate.toISOString().split('T')[0];
-        
-        // Force refresh of the data
-        dataTable.refresh();
+      if (startDateCell && startDateCell.content && endDateCell) {
+        const startDate = new Date(startDateCell.content);
+        if (!isNaN(startDate.getTime())) {
+          const newEndDate = addDays(startDate, duration > 0 ? duration -1 : 0); // duration includes start day
+          endDateCell.content = format(newEndDate, 'yyyy-MM-dd');
+          dataTable.refresh();
+        }
       }
     }
   },
 ];
 
-const columnToTaskMapping = {
-  'Task Name': 'name',
-  'Task Type': 'taskType',
-  'Dependencies': 'dependencies',
-  'Start Date': 'startDate',
-  'End Date': 'endDate',
-  'Duration (Days)': 'duration',
-  'Progress': 'progress',
-  'Assignee': 'assignee'
-};
+// const columnToTaskMapping: { [key: string]: keyof Task | null } = { // Unused now, column.id is used
+//   'Task Name': 'name',
+//   'Task Type': 'taskType',
+//   'Dependencies': 'dependencies',
+//   'Start Date': 'startDate',
+//   'End Date': 'endDate',
+//   'Duration (Days)': 'duration',
+//   'Progress': 'progress',
+//   // 'Assignee': 'assignee'
+// };
 
 
 const showInsertMenu = ref(false);
-const insertPosition = ref<number | null>(null);
+// const insertPosition = ref<number | null>(null); // Seems unused
 
-function formatDate(date: string) {
-  return format(new Date(date), 'MMM dd, yyyy');
+function formatDate(dateString: string): string {
+  if (!dateString) return '';
+  try {
+    return format(new Date(dateString), 'MMM dd, yyyy');
+  } catch (e) {
+    return dateString; // Return original if formatting fails
+  }
 }
 
-function formatDependencies(dependencies: string[]): string {
+function formatDependencies(dependencies?: string[]): string {
+  if (!dependencies || dependencies.length === 0) return '';
   return dependencies.join(', ');
 }
-// Then use it in your computed property
+
 const tableData = computed(() => {
-  return taskStore.tasks.map((task, index) => {
-    // Start with the non-mapped fields
-    const rowData = {
-      '#': index + 1,
-      'indent': task.indent,
-      'Actions': '',
+  return taskStore.tasks.map((task: Task, index: number) => { // Typed task and index
+    return {
+        '#': index + 1,
+        'indent': task.indent,
+        'Task Name': task.name,
+        'Task Type': task.taskType,
+        'Dependencies': formatDependencies(task.dependencies),
+        'Start Date': task.startDate,
+        'End Date': task.endDate,
+        'Progress': task.progress,
+        'duration': task.duration,
     };
-    
-    // Add all the mapped fields
-    Object.entries(columnToTaskMapping).forEach(([colName, propName]) => {
-      // Special handling for dependencies which need formatting
-      if (colName === 'Dependencies') {
-        rowData[colName] = formatDependencies(task[propName]);
-      } else {
-        rowData[colName] = task[propName];
-      }
-    });
-    
-    return rowData;
   });
 });
 
-// Initialize and update DataTable
 onMounted(() => {
   initDataTable();
 });
 
-
-const updateGantt = () => {
-  eventBus.emit('refreshGantt', taskStore.task);
-};
 // Watch for changes in the task store
 watch(() => taskStore.tasks, () => {
   if (datatable) {
-    datatable.refresh(tableData.value);
+    // console.log("Refreshing datatable due to taskStore.tasks change");
+    datatable.refresh(tableData.value); // tableData is already computed from taskStore.tasks
+    eventBus.emit('refreshGantt'); // Emit event to refresh Gantt chart
   }
 }, { deep: true });
 
 function initDataTable() {
-  if (!tableEl.value) return;
+  if (!tableEl.value || datatable) return; // Prevent re-initialization
   
   datatable = new DataTable(tableEl.value, {
     columns: columns,
     data: tableData.value,
     checkboxColumn: true,
-    serialNoColumn: true,
+    serialNoColumn: true, // Uses '#' key from data
     layout: 'fluid',
-    cellHeight: 28,
-    treeView: true,
-    indent: 1.5,
+    cellHeight: 28, // Consider making this configurable
+    treeView: true, // Assumes data has 'indent'
+    // indent: 1.5, // Default is 1.5 rem
     pasteFromClipboard: true,
-    //dynamicRowHeight: true,
     events: {
-      onRemoveRow(rowIndex: number) {
-        const taskId = taskStore.tasks[rowIndex].id;
-        taskStore.deleteTask(taskId);
+      onRemoveRow: (rowIndex: number) => { // This rowIndex is from the datatable's view
+        // It's safer to get the task ID from the store based on the data if possible,
+        // or ensure tableData provides the original task ID if rows can be reordered/filtered.
+        // For now, assuming rowIndex directly maps to taskStore.tasks index.
+        if (taskStore.tasks[rowIndex]) {
+          const taskId = taskStore.tasks[rowIndex].id;
+          taskStore.deleteTask(taskId);
+        }
       }
     },
-     getEditor1(colIndex, rowIndex, value, parent, column, row, data) {
-      //show calendar control only for date columns
-      if (column.name != 'Start Date' && column.name != 'End Date')  return;
-      						const $input = document.createElement('input');
-						$input.type = 'date';
-						parent.appendChild($input);
+     getEditor: (_colIndex: number, _rowIndex: number, _value: any, parent: HTMLElement, column: FrappeColumn, _row: any, _data: any) => { // _colIndex marked as unused
+      if (column.id === 'startDate' || column.id === 'endDate') {
+        const input = document.createElement('input');
+        input.type = 'date';
+        parent.appendChild(input);
 
-						const parse = value => value.replace(/\//g, '-');
-						const format = value => value.replace(/\-/g, '/');
+        const parse = (val: string) => val ? val.replace(/\//g, '-') : '';
+        const formatVal = (val: string) => val ? val.replace(/-/g, '/') : '';
 
-						return {
-							initValue(value) {
-								$input.focus();
-								$input.value = parse(value);
-							},
-							setValue(value) {
-								$input.value = parse(value);
-							},
-							getValue() {
-								return format($input.value);
-							}
-						}
+        return {
+            initValue(val: string) {
+                input.focus();
+                input.value = parse(val);
+            },
+            setValue(val: string) {
+                input.value = parse(val);
+            },
+            getValue() {
+                return formatVal(input.value);
+            }
+        };
+      }
+      return undefined; // Use default editor for other columns
     }
   });
-window.datatable = datatable;
+// window.datatable = datatable; // Removed for production code
 
-datatable.wrapper.addEventListener('input', function (e) {
-    let editCell = e.target.closest('.dt-cell__edit');
-    if (editCell) {
-        lastEditedValue = editCell.textContent.trim(); // Capture latest input value
-    }
-});
-datatable.wrapper.addEventListener('focusout', function(e) {
-    let editCell = e.target.closest('.dt-input'); // Check if it's an edit cell
-  //" data-row-index="1" data-col-index="2" 
-   if (editCell) {
-      debugger;
-        const rootElement= editCell.parentElement.parentElement;
-        let rowIndex = rootElement.dataset.rowIndex;
-        let colIndex = rootElement.dataset.colIndex -1;
-        let newValue = editCell?.value?.trim() || '';
-        console.log(`Cell [${rowIndex}, ${colIndex}] updated to: ${newValue}`);
-        // Call your function to sync state
-        //get column name from colIndex
-        //if checkbox column is present, then colIndex is off by 1
-        if (datatable.options.checkboxColumn) {
-            colIndex = colIndex - 1;
+// Custom event listener for cell updates (focusout on input)
+// Frappe DataTable might have its own cell update events that are more robust.
+// This is a common pattern if direct input manipulation is needed.
+  datatable.wrapper.addEventListener('focusout', (e: FocusEvent) => {
+    const target = e.target as HTMLElement;
+    const editInput = target.closest('.dt-input') as HTMLInputElement | HTMLSelectElement; // Could be input or select
+
+    if (editInput && editInput.parentElement?.parentElement) {
+      const cellElement = editInput.parentElement.parentElement as HTMLElement;
+      const rowIndexStr = cellElement.dataset.rowIndex;
+      let colIndexStr = cellElement.dataset.colIndex;
+
+      if (rowIndexStr && colIndexStr) {
+        const rowIndex = parseInt(rowIndexStr, 10);
+        let colIndex = parseInt(colIndexStr, 10);
+
+        if (datatable.options.checkboxColumn) colIndex--; // Adjust for checkbox column
+        if (datatable.options.serialNoColumn) colIndex--; // Adjust for serial number column
+
+        const column = columns[colIndex];
+        if (column && column.id) { // Ensure column and column.id exist
+          const taskKey = column.id as keyof Task; // Map column name/id to Task key
+          const newValue = editInput.value.trim();
+
+          // console.log(`Focusout: Cell [${rowIndex}, ${taskKey}] updated to: ${newValue}`);
+          if (taskStore.tasks[rowIndex]) { // Ensure task exists at this index
+            taskStore.updateTaskValue(rowIndex, taskKey, newValue);
+            // Optionally highlight:
+            // editInput.style.backgroundColor = "#fffa90";
+            // setTimeout(() => { editInput.style.backgroundColor = ""; }, 1000);
+          }
         }
-        let colname=columns[colIndex].name;
-        console.log(`Column Name: ${colname}`);
-        //how to we map this to Task type?
-        colname = columnToTaskMapping[colname];
-        console.log(`Mapped Column Name: ${colname}`);
-        //updateTableState(rowIndex, colname, newValue);
-        taskStore.updateTaskValue(rowIndex, colname, newValue);
-        // Highlight the edited cell (optional)
-        editCell.style.backgroundColor = "#fffa90"; // Light yellow highlight
-        setTimeout(() => editCell.style.backgroundColor = "", 1000); // Remove after 1 sec
-   }
-});
-
-datatable.wrapper.addEventListener('focusout', function(e) {
-    let rowElement = e.target.closest('.dt-row');
-    if (rowElement) {
-        let rowIndex = rowElement.dataset.rowIndex;
+      }
     }
-});
+  });
 
-
-datatable.wrapper.addEventListener('click', function(e) {
-    let rowElement = e.target.closest('.dt-row');
-    if (rowElement) {
-        let rowIndex = rowElement.dataset.rowIndex;
-
-        // Remove highlight from all rows
-        datatable.rowmanager.highlightAll(false) 
-        datatable.rowmanager.highlightRow(rowIndex, true);
-        // Add highlight to the clicked row
-        taskStore.selectedRow =parseInt(rowIndex);
+  datatable.wrapper.addEventListener('click', (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const rowElement = target.closest('.dt-row') as HTMLElement;
+    if (rowElement && rowElement.dataset.rowIndex) {
+        const rowIndex = parseInt(rowElement.dataset.rowIndex, 10);
+        if (taskStore.tasks[rowIndex]) {
+          // datatable.rowmanager.highlightAll(false); // This might not be a public API
+          // datatable.rowmanager.highlightRow(rowIndex, true); // This might not be a public API
+          taskStore.selectTask(taskStore.tasks[rowIndex].id); // Select by ID
+        }
     }
-});
-
-
+  });
 }
 
 function addNewTask() {
@@ -270,59 +281,61 @@ function addNewTask() {
 
 function insertTaskAt(position: number) {
   taskStore.addTask(position);
+  // Consider closing menu and refreshing table if needed
+  showInsertMenu.value = false;
 }
 
 function insertTaskAbove() {
-  if (!taskStore.selectedRow) return;
-  debugger;
+  if (taskStore.selectedRow === null || taskStore.selectedRow === undefined) return;
   insertTaskAt(taskStore.selectedRow);
 }
 
 function insertTaskBelow() {
-  if (!taskStore.selectedRow) return;  
-  insertTaskAt(taskStore.selectedRow+1);
+  if (taskStore.selectedRow === null || taskStore.selectedRow === undefined) return;
+  insertTaskAt(taskStore.selectedRow + 1);
 }
 
 function insertTaskAtTop() {
-  insertTaskAt(1);
+  insertTaskAt(0); // Insert at the beginning of the array
 }
 
 function insertTaskAtBottom() {
   insertTaskAt(taskStore.tasks.length);
 }
 
-function deleteTask() {
-  if (!taskStore.selectedRow) return;
-  taskStore.deleteTask(taskStore.selectedRow);
-}
-
-function indentTask() {
-  if (!taskStore.selectedRow) return;
-  taskStore.indentTask(taskStore.selectedRow);
-  // Update tree view in datatable
-  if (datatable) {
-    datatable.refresh(tableData.value);
+function deleteTaskHandler() { // Renamed to avoid conflict with imported 'deleteTask' from store if any confusion
+  if (taskStore.selectedRow === null || taskStore.selectedRow === undefined) return;
+  const taskToDelete = taskStore.tasks[taskStore.selectedRow];
+  if (taskToDelete) {
+    taskStore.deleteTask(taskToDelete.id);
   }
 }
 
-function unindentTask() {
-  if (!taskStore.selectedRow) return;
-  taskStore.unindentTask(taskStore.selectedRow);
-  
-  // Update tree view in datatable
-  if (datatable) {
-    datatable.refresh(tableData.value);
+function indentTaskHandler() { // Renamed
+  if (taskStore.selectedRow === null || taskStore.selectedRow === undefined) return;
+  const taskToIndent = taskStore.tasks[taskStore.selectedRow];
+  if (taskToIndent) {
+    taskStore.indentTask(taskToIndent.id);
+    // Datatable refresh is handled by watcher on taskStore.tasks
   }
 }
 
-function showInsertOptions(index: number) {
-  insertPosition.value = index;
-  showInsertMenu.value = true;
+function unindentTaskHandler() { // Renamed
+  if (taskStore.selectedRow === null || taskStore.selectedRow === undefined) return;
+  const taskToUnindent = taskStore.tasks[taskStore.selectedRow];
+  if (taskToUnindent) {
+    taskStore.unindentTask(taskToUnindent.id);
+  }
 }
+
+// function showInsertOptions(index: number) { // Unused
+//   insertPosition.value = index;
+//   showInsertMenu.value = true;
+// }
 
 function closeInsertMenu() {
   showInsertMenu.value = false;
-  insertPosition.value = null;
+  // insertPosition.value = null; // insertPosition seems unused
 }
 </script>
 
@@ -337,27 +350,27 @@ function closeInsertMenu() {
           <span>Add Task</span>
         </button>
         
-        <button @click="insertTaskAbove" class="toolbar-btn" title="Insert Above" :disabled="!taskStore.selectedRow">
+        <button @click="insertTaskAbove" class="toolbar-btn" title="Insert Above" :disabled="taskStore.selectedRow === null">
           <svg xmlns="http://www.w3.org/2000/svg" class="icon" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
           </svg>
           <span>Insert Above</span>
         </button>
         
-        <button @click="insertTaskBelow" class="toolbar-btn" title="Insert Below" :disabled="!taskStore.selectedRow">
+        <button @click="insertTaskBelow" class="toolbar-btn" title="Insert Below" :disabled="taskStore.selectedRow === null">
           <svg xmlns="http://www.w3.org/2000/svg" class="icon" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
           </svg>
           <span>Insert Below</span>
         </button>
-              <button @click="indentTask" class="toolbar-btn" title="Indent Task" :disabled="!taskStore.selectedRow">
+              <button @click="indentTaskHandler" class="toolbar-btn" title="Indent Task" :disabled="taskStore.selectedRow === null">
           <svg xmlns="http://www.w3.org/2000/svg" class="icon" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M3 7a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 13a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM8 5a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1V6a1 1 0 00-1-1H8z" clip-rule="evenodd" />
           </svg>
           <span>Indent</span>
         </button>
         
-        <button @click="unindentTask" class="toolbar-btn" title="Unindent Task" :disabled="!taskStore.selectedRow">
+        <button @click="unindentTaskHandler" class="toolbar-btn" title="Unindent Task" :disabled="taskStore.selectedRow === null">
           <svg xmlns="http://www.w3.org/2000/svg" class="icon" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M3 7a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 13a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM13 5a1 1 0 00-1 1v8a1 1 0 001 1h2a1 1 0 001-1V6a1 1 0 00-1-1h-2z" clip-rule="evenodd" />
           </svg>
@@ -365,7 +378,7 @@ function closeInsertMenu() {
         </button>
               
       <div class="toolbar-group">
-        <button @click="deleteTask" class="toolbar-btn delete-btn" title="Delete Task" :disabled="!taskStore.selectedRow">
+        <button @click="deleteTaskHandler" class="toolbar-btn delete-btn" title="Delete Task" :disabled="taskStore.selectedRow === null">
           <svg xmlns="http://www.w3.org/2000/svg" class="icon" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
           </svg>

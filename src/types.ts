@@ -1,19 +1,9 @@
-export interface Task {
-  id: string;
-  name: string;
-  startDate: string;
-  endDate: string;
-  progress: number;
-  assignee: string;
-  dependencies: string[];
-  level: number;
-  parentId: string | null;
-  sequence?: number;
-  taskType: string;
-}
+import type { Task } from './types/Task'; // Import for use within this file
+
+// The local Task interface has been removed.
 
 export interface Column {
-  key: keyof Task;
+  key: keyof Task; // Now refers to the imported Task interface
   label: string;
   width: string;
   editable?: boolean;
@@ -22,10 +12,12 @@ export interface Column {
 }
 
 export interface GanttBar {
-  task: Task;
+  task: Task; // Now refers to the imported Task interface
   left: number;
   width: number;
 }
+
+export type { Task }; // Re-export Task for other modules
 
 export type TaskType = 
   | 'Foundation' 

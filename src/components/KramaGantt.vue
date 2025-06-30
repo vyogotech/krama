@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, computed, effectScope } from 'vue'; // Removed 'reactive', added effectScope
+import { ref, watch, onMounted, computed } from 'vue'; // Removed 'effectScope'
 import type { Task } from '../types/Task';
 import { useTaskStore } from '../stores/taskStore';
 import { useI18n } from 'vue-i18n'; // Import useI18n
@@ -48,7 +48,7 @@ const emit = defineEmits<{
 const taskStore = useTaskStore();
 
 // --- I18n ---
-const { t, locale: i18nLocale, setLocaleMessage, mergeLocaleMessage } = useI18n();
+const { t, locale: i18nLocale, mergeLocaleMessage } = useI18n(); // Removed setLocaleMessage
 
 // --- Computed Properties ---
 const displayedTasks = computed(() => taskStore.tasks); // For displaying tasks in the grid/list
@@ -69,7 +69,7 @@ function getCurrentProjectData(): ProjectDataProp {
     id: props.projectData.id, // ID and Name are generally from the initial prop, not edited by Krama directly.
     name: props.projectData.name,
     status: currentProjectStatus.value,
-    tasks: taskStore.tasks.map(task => simpleDeepClone(task)) // Use deep clone for tasks from store
+    tasks: taskStore.tasks.map((task: Task) => simpleDeepClone(task)) // Typed task, Use deep clone for tasks from store
   };
 }
 
@@ -87,7 +87,7 @@ function checkForChanges() {
 onMounted(() => {
   // Initialize the task store with tasks from the projectData prop.
   // This uses the store's `setTasks` action which also handles history reset.
-  taskStore.setTasks(props.projectData.tasks.map(task => simpleDeepClone(task)));
+  taskStore.setTasks(props.projectData.tasks.map((task: Task) => simpleDeepClone(task))); // Typed task
 
   // Initialize currentProjectStatus from the prop.
   currentProjectStatus.value = props.projectData.status;
@@ -120,7 +120,7 @@ onMounted(() => {
 
 // Watch for external changes to the entire projectData prop.
 watch(() => props.projectData, (newData) => {
-  taskStore.setTasks(newData.tasks.map(task => simpleDeepClone(task)));
+  taskStore.setTasks(newData.tasks.map((task: Task) => simpleDeepClone(task))); // Typed task
   currentProjectStatus.value = newData.status;
 
   // Update pristine state to reflect the new incoming data.
@@ -281,9 +281,9 @@ function zoomOut() {
 
       <!-- CT-04: Zoom Controls -->
       <div class="krama-toolbar-group">
-        <button @click="zoomIn" :disabled="!canZoomIn.value" class="krama-toolbar-button" :title="t('krama.toolbar.zoomIn')">{{ t('krama.toolbar.zoomIn') }}</button>
+        <button @click="zoomIn" :disabled="!canZoomIn" class="krama-toolbar-button" :title="t('krama.toolbar.zoomIn')">{{ t('krama.toolbar.zoomIn') }}</button>
         <span class="krama-zoom-level-text">{{ t('krama.toolbar.zoomView') }} {{ currentZoomLevel }}</span>
-        <button @click="zoomOut" :disabled="!canZoomOut.value" class="krama-toolbar-button" :title="t('krama.toolbar.zoomOut')">{{ t('krama.toolbar.zoomOut') }}</button>
+        <button @click="zoomOut" :disabled="!canZoomOut" class="krama-toolbar-button" :title="t('krama.toolbar.zoomOut')">{{ t('krama.toolbar.zoomOut') }}</button>
       </div>
 
       <!-- CT-05: Expand/Collapse All -->

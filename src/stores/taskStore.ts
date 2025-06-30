@@ -1,8 +1,8 @@
 // src/stores/taskStore.ts
-import { defineStore, storeToRefs } from 'pinia';
-import { ref as vueRef, computed } from 'vue'; // Use vueRef to avoid conflict with useRefHistory's ref
+import { defineStore } from 'pinia'; // Removed storeToRefs
+import { ref as vueRef } from 'vue'; // Use vueRef, removed computed
 import { format } from 'date-fns';
-import type { Task } from '../types';
+import type { Task } from '../types'; // This should now point to the corrected Task type
 import { useRefHistory } from '@vueuse/core';
 
 // Initial Data (moved outside for clarity, can be part of state function too)
@@ -118,10 +118,10 @@ export const useTaskStore = defineStore('tasks', () => {
 
   const deleteTask = (taskId: string) => { // Changed to taskId for clarity, though original used selectedRow
     executeWithHistory(() => {
-      const taskIndex = tasks.value.findIndex(t => t.id === taskId);
+      const taskIndex = tasks.value.findIndex((t: Task) => t.id === taskId); // Typed t
       if (taskIndex !== -1) {
         tasks.value.splice(taskIndex, 1);
-        if (selectedRow.value === taskIndex || selectedRow.value > taskIndex) {
+        if (selectedRow.value === taskIndex || (selectedRow.value !== null && selectedRow.value > taskIndex)) { // Added null check for selectedRow.value > taskIndex
           selectedRow.value = selectedRow.value > 0 ? selectedRow.value -1 : null; // Adjust selection
         }
          if (tasks.value.length === 0) {
@@ -136,7 +136,7 @@ export const useTaskStore = defineStore('tasks', () => {
 
   const updateTask = (taskId: string, updates: Partial<Task>) => {
     executeWithHistory(() => {
-      const task = tasks.value.find(t => t.id === taskId);
+      const task = tasks.value.find((t: Task) => t.id === taskId); // Typed t
       if (task) {
         Object.assign(task, updates);
       }
@@ -147,14 +147,14 @@ export const useTaskStore = defineStore('tasks', () => {
     if (taskId === null) {
       selectedRow.value = null;
     } else {
-      const taskIndex = tasks.value.findIndex(t => t.id === taskId);
+      const taskIndex = tasks.value.findIndex((t: Task) => t.id === taskId); // Typed t
       selectedRow.value = taskIndex !== -1 ? taskIndex : null;
     }
   };
 
   const indentTask = (taskId: string) => {
     executeWithHistory(() => {
-      const taskIndex = tasks.value.findIndex(t => t.id === taskId);
+      const taskIndex = tasks.value.findIndex((t: Task) => t.id === taskId); // Typed t
       if (taskIndex === -1 || taskIndex === 0) return; // Cannot indent first task
 
       const task = tasks.value[taskIndex];
@@ -178,11 +178,11 @@ export const useTaskStore = defineStore('tasks', () => {
 
   const unindentTask = (taskId: string) => {
     executeWithHistory(() => {
-      const taskIndex = tasks.value.findIndex(t => t.id === taskId);
+      const taskIndex = tasks.value.findIndex((t: Task) => t.id === taskId); // Typed t
       if (taskIndex === -1 || tasks.value[taskIndex].indent === 0) return;
 
       const task = tasks.value[taskIndex];
-      const oldIndent = task.indent;
+      // const oldIndent = task.indent; // Unused
       task.indent--;
 
       if (task.indent === 0) {
@@ -320,7 +320,7 @@ export const useTaskStore = defineStore('tasks', () => {
       historyRedo();
     }
   };
-  
+
   // Function to reset tasks, e.g., when loading new project data
   // This should also clear the history for the new project context.
   const setTasks = (newTasks: Task[]) => {
@@ -357,142 +357,4 @@ export const useTaskStore = defineStore('tasks', () => {
     redo,
     setTasks, // New action to replace all tasks and reset history
   };
-});
-      const newTask: Task = {
-        id: newId,
-        name: '',
-        startDate: format(new Date(), 'yyyy-MM-dd'),
-        endDate: format(new Date(), 'yyyy-MM-dd'),
-        progress: 0,
-        assignee: '',
-        dependencies: [],
-        indent: 0,
-        parentId: null,
-        taskType: '',
-      };
-      if (position > 0) {
-        newTask.indent = this.tasks[position - 1].indent;
-        if (newTask.indent > 0) {
-          for (let i = position - 1; i >= 0; i--) {
-            if (this.tasks[i].indent === newTask.indent - 1) {
-              newTask.parentId = this.tasks[i].id;
-              break;
-            }
-          }
-        }
-      }
-      this.tasks.splice(position, 0, newTask);
-      this.selectedRow = position;
-      return newId;
-    },
-    
-    deleteTask(taskId: string) {
-      if (this.selectedRow !== null) {
-        this.tasks.splice(this.selectedRow, 1);
-        this.selectedRow = null;
-      }
-    },
-    
-    updateTask(taskId: string, updates: Partial<Task>) {
-      const task = this.tasks.find(t => t.id === taskId);
-      if (!task) return;
-      Object.assign(task, updates);
-    },
-    
-    selectTask(taskId: string | null) {
-      this.selectedRow = taskId ? this.tasks.findIndex(t => t.id === taskId) : null;
-    },
-    
-    indentTask(taskId: string) {
-      if (this.selectedRow === null) return;
-      const task = this.tasks[this.selectedRow];
-      const previousTask = this.tasks[this.selectedRow - 1];
-      if (task.indent >= 5) return;
-      task.indent++;
-      for (let i = this.selectedRow + 1; i < this.tasks.length; i++) {
-        if (this.tasks[i].indent == task.indent) {
-          this.tasks[i].indent = task.indent + 1;
-        }
-      }
-    },
-    
-    unindentTask(taskId: string) {
-      if (this.selectedRow === null) return;
-      const task = this.tasks[this.selectedRow];
-      if (task.indent === 0) return;
-      task.indent--;
-      if (task.indent === 0) {
-        task.parentId = null;
-      } else {
-        for (let i = this.selectedRow + 1; i < this.tasks.length; i++) {
-          if (this.tasks[i].indent == task.indent) {
-            this.tasks[i].indent = task.indent - 1;
-          }
-        }
-      }
-    },
-    
-    updateTaskRecord(rowindex: number, colIndex: number, value: any) {
-      const task = this.tasks[rowindex];
-      if (!task) return;
-      task[colIndex] = value;
-    },
-    
-    updateTaskValue(rowindex: number, field: keyof Task, value: any) {
-      const task = this.tasks[rowindex];
-      if (!task) return;
-      switch (field) {
-        case 'name':
-        case 'taskType':
-        case 'assignee':
-          task[field] = value;
-          break;
-        case 'duration':
-          if (value < 0) return;
-          task.duration = value;
-          if (task.startDate) {
-            const start_date = new Date(task.startDate);
-            if (!isNaN(start_date.getTime())) {
-              const end_date = new Date(start_date);
-              end_date.setDate(start_date.getDate() + parseInt(value));
-              task.endDate = end_date.toISOString().split('T')[0];
-            }
-          }
-          break;
-          
-        case 'startDate':
-          task.startDate = value;
-          if (task.endDate) {
-            const start_date = new Date(value);
-            const end_date = new Date(task.endDate);
-            if (!isNaN(start_date.getTime()) && !isNaN(end_date.getTime())) {
-              const diffTime = end_date.getTime() - start_date.getTime();
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-              task.duration = diffDays;
-            }
-          }
-          break;
-            
-        case 'endDate':
-          task.endDate = value;
-          if (task.startDate) {
-            const start_date = new Date(task.startDate);
-            const end_date = new Date(value);
-            if (!isNaN(start_date.getTime()) && !isNaN(end_date.getTime())) {
-              const diffTime = end_date.getTime() - start_date.getTime();
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-              task.duration = diffDays;
-            }
-          }
-          break;
-
-        case 'progress':
-          task.progress = parseFloat(value);
-          break;
-        case 'dependencies':
-          task.dependencies = value.split(',').map((d: string) => d.trim()).filter((d: string) => d);
-          break;
-      }
-    }
-  }
 });

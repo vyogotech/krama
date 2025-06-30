@@ -1,13 +1,27 @@
 <script setup lang="ts">
-import { onMounted, watch, ref, nextTick, computed, onUnmounted, PropType } from 'vue'; // Added PropType
+import { onMounted, watch, ref, nextTick, computed, onUnmounted, PropType } from 'vue';
 import Gantt from 'frappe-gantt';
 import { parseISO, format, addDays } from 'date-fns';
-import type { Task } from '../types'; // Assuming this path is correct for Task type
+// Task type from '../types' is implicitly used by taskStore.tasks.
+// Explicit import removed as it's not used for direct annotations in this file.
 import { useTaskStore } from '../stores/taskStore';
 // import { provide } from "vue"; // provide seems unused
-import { eventBus } from '../event-bus/eventBus'; // eventBus seems unused currently after removing watch on tasks
+import { eventBus } from '../event-bus/eventBus';
 
 type ZoomLevel = 'Day' | 'Week' | 'Month'; // Matches KramaGantt.vue zoom levels
+
+// Interface for the task object structure that frappe-gantt uses and passes to on_click
+interface FrappeGanttTask {
+  id: string;
+  name: string;
+  start: string; // YYYY-MM-DD
+  end: string;   // YYYY-MM-DD
+  progress: number;
+  dependencies?: string; // Comma-separated string
+  custom_class?: string;
+  // other fields frappe-gantt might add
+  [key: string]: any; // Allow other properties
+}
 
 const props = defineProps({
   zoomLevel: {
@@ -20,27 +34,28 @@ const props = defineProps({
 const taskStore = useTaskStore();
 const ganttContainer = ref<HTMLElement | null>(null);
 const ganttWrapper = ref<HTMLElement | null>(null);
-let ganttChart: Gantt | null = null;
+let ganttChart: any = null; // Changed Gantt to any
 let resizeObserver: ResizeObserver | null = null;
 
 // Compute the earliest start date from all tasks
 const earliestStartDate = computed(() => {
   if (taskStore.tasks.length === 0) return new Date();
-  
-  return taskStore.tasks.reduce((earliest, task) => {
+  // Initialize with the first task's start date, parsed
+  const initialDate = taskStore.tasks[0] ? parseISO(taskStore.tasks[0].startDate) : new Date();
+  return taskStore.tasks.reduce((earliest: Date, task) => { // Typed earliest and task
     const taskStart = parseISO(task.startDate);
     return taskStart < earliest ? taskStart : earliest;
-  }, parseISO(taskStore.tasks[0].startDate));
+  }, initialDate);
 });
 
 // Compute the latest end date from all tasks
 const latestEndDate = computed(() => {
   if (taskStore.tasks.length === 0) return addDays(new Date(), 7);
-  
-  return taskStore.tasks.reduce((latest, task) => {
+  const initialDate = taskStore.tasks[0] ? parseISO(taskStore.tasks[0].endDate) : addDays(new Date(), 7);
+  return taskStore.tasks.reduce((latest: Date, task) => { // Typed latest and task
     const taskEnd = parseISO(task.endDate);
     return taskEnd > latest ? taskEnd : latest;
-  }, parseISO(taskStore.tasks[0].endDate));
+  }, initialDate);
 });
 
 const formatTasks = () => {
@@ -48,7 +63,7 @@ const formatTasks = () => {
   if (taskStore.tasks.length === 0) {
     return [{
       id: 'placeholder',
-      name: 'No tasks available',
+      name: 'No tasks available', // Consider using i18n here later
       start: format(new Date(), 'yyyy-MM-dd'),
       end: format(addDays(new Date(), 7), 'yyyy-MM-dd'),
       progress: 0,
@@ -56,7 +71,7 @@ const formatTasks = () => {
     }];
   }
   
-  return taskStore.tasks.map(task => ({
+  return taskStore.tasks.map(task => ({ // task here is from taskStore.tasks, already typed Task
     id: task.id,
     name: task.name,
     start: format(parseISO(task.startDate), 'yyyy-MM-dd'),
@@ -91,10 +106,10 @@ const renderGantt = () => {
       end_date: endDate,
       readonly: true, // As per existing setup, Krama interactions are in the grid
       custom_popup_html: null, // Disable default popup for now
-      on_click: (task) => {
+      on_click: (task: FrappeGanttTask) => { // Typed the task parameter
         // Potentially emit an event or select task in store
         // console.log("Gantt task clicked:", task);
-        taskStore.selectTask(task.id);
+        taskStore.selectTask(task.id); // task.id is string, selectTask expects string | null
       },
       // on_date_change: (task, start, end) => { /* For editable charts */ },
       // on_progress_change: (task, progress) => { /* For editable charts */ },
